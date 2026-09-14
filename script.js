@@ -8,6 +8,7 @@
   var thumbKnot = document.getElementById("thumbKnot");
   var thumbKnotBack = document.getElementById("thumbKnotBack");
   var tabHit = document.getElementById("tabHit");
+  var ballHit = document.getElementById("ballHit");
   var notesLayer = document.getElementById("notesLayer");
   var cleanupBtn = document.getElementById("cleanupBtn");
   var counterEl = document.getElementById("counter");
@@ -15,6 +16,8 @@
   // ---------- geometry state ----------
   var W = 0, H = 0;
   var cx = 0, cy = 0;
+  var HOME = { x: 0, y: 0 };
+  var hasPositioned = false;
   var NOMINAL_R = 108;
   var currentR = NOMINAL_R;
   var ATTACH_ANGLE = 50 * Math.PI / 180;
@@ -32,8 +35,16 @@
     stageSvg.setAttribute("width", W);
     stageSvg.setAttribute("height", H);
     currentR = clamp(58, Math.min(W, H) * 0.15, 108);
-    cx = W / 2;
-    cy = H * 0.58;
+    HOME.x = W / 2;
+    HOME.y = H * 0.58;
+    if (!hasPositioned) {
+      cx = HOME.x;
+      cy = HOME.y;
+      hasPositioned = true;
+    } else {
+      cx = clamp(currentR, cx, W - currentR);
+      cy = clamp(currentR + 90, cy, H - currentR - 10);
+    }
   }
   computeGeometry();
   window.addEventListener("resize", computeGeometry);
@@ -105,6 +116,10 @@
 
     squish.x += (1 - squish.x) * 0.16;
     squish.y += (1 - squish.y) * 0.16;
+
+    ballHit.setAttribute("cx", cx);
+    ballHit.setAttribute("cy", cy);
+    ballHit.setAttribute("r", currentR * 0.92);
 
     var s = ballScale();
     ballArt.setAttribute(
@@ -360,6 +375,32 @@
   tabHit.addEventListener("pointerup", endDrag);
   tabHit.addEventListener("pointercancel", endDrag);
 
+  // ---------- drag the ball itself around the screen ----------
+  var isBallDragging = false;
+  var ballDragOffset = { x: 0, y: 0 };
+
+  ballHit.addEventListener("pointerdown", function (e) {
+    e.preventDefault();
+    isBallDragging = true;
+    ballHit.setPointerCapture(e.pointerId);
+    ballDragOffset = { x: e.clientX - cx, y: e.clientY - cy };
+    bumpSquish(0.94, 1.08);
+  });
+
+  ballHit.addEventListener("pointermove", function (e) {
+    if (!isBallDragging) return;
+    cx = clamp(currentR, e.clientX - ballDragOffset.x, W - currentR);
+    cy = clamp(currentR + 90, e.clientY - ballDragOffset.y, H - currentR - 10);
+  });
+
+  function endBallDrag() {
+    if (!isBallDragging) return;
+    isBallDragging = false;
+    bumpSquish(1.03, 0.96);
+  }
+  ballHit.addEventListener("pointerup", endBallDrag);
+  ballHit.addEventListener("pointercancel", endBallDrag);
+
   // ---------- cleanup: bounce the ball, clear cards one by one ----------
   var isCleaning = false;
 
@@ -377,7 +418,6 @@
   }
 
   function bounceBallSequence() {
-    var homeCx = cx, homeCy = cy;
     var margin = currentR + 30;
     var topBound = Math.max(120, margin);
     var bottomBound = Math.max(topBound + 40, H * 0.62);
@@ -388,7 +428,7 @@
         y: topBound + Math.random() * Math.max(40, bottomBound - topBound)
       });
     }
-    points.push({ x: homeCx, y: homeCy });
+    points.push({ x: HOME.x, y: HOME.y });
 
     var idx = 0;
     function hop() {
@@ -420,6 +460,9 @@
     if (isCleaning) return;
     isCleaning = true;
     cleanupBtn.disabled = true;
+    pullCount = 0;
+    localStorage.setItem(STORAGE_KEY, "0");
+    updateCounter();
     bounceBallSequence();
     removeCardsStaggered();
     setTimeout(function () {
