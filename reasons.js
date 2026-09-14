@@ -27,13 +27,13 @@ var REASONS = [
   "I'm proud of you, today and every day, meri jaan.",
   "You are so so beautiful.",
   "I feel blessed to just be in your presence.",
-  "To be chosen by you, feels like a divine blessing to me."
+  "To be chosen by you, feels like a divine blessing to me.",
   "You are such a cutie pie.",
-  "I'm inspired by you... in so many ways"
+  "I'm inspired by you... in so many ways",
   "You are so kind and loving.",
   "I wanna grow old with you.",
   "Your presence is calming.",
-  "Well, its an honour to be with you."
+  "Well, its an honour to be with you.",
   "Your hugs are very warm and cozy and filled with so much love",
   "Your aura is veryy pretty!",
   "You are just... amazing",
@@ -43,7 +43,7 @@ var REASONS = [
   "I want to travel the world with you.",
   "Need some amazing experiences in life that I'll never dare to do unless you're with me",
   "My heart belongs to you. Beats for you.",
-  "I am yours"
+  "I am yours",
   "I'm impressed by how amazing you are.",
     "I'm amazed by how much you are able to handle.",
     "I'm in awe of you",
