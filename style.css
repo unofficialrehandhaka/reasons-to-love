@@ -20,6 +20,10 @@ html, body {
   color: var(--ink);
   font-family: var(--font-sans);
   overflow: hidden;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .page-header {
@@ -63,6 +67,7 @@ html, body {
   height: 100%;
   z-index: 1;
   pointer-events: none;
+  touch-action: none;
 }
 
 .drag-handle {
