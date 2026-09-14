@@ -1,83 +1,152 @@
 (function () {
   "use strict";
 
-  var ballGroup = document.getElementById("ballGroup");
+  // ---------- elements ----------
+  var stageSvg = document.getElementById("stageSvg");
+  var ballArt = document.getElementById("ballArt");
   var threadPath = document.getElementById("threadPath");
   var thumbKnot = document.getElementById("thumbKnot");
   var thumbKnotBack = document.getElementById("thumbKnotBack");
-  var pullTarget = document.getElementById("pullTarget");
-  var noteOverlay = document.getElementById("noteOverlay");
-  var noteText = document.getElementById("noteText");
-  var noteClose = document.getElementById("noteClose");
+  var tabHit = document.getElementById("tabHit");
+  var notesLayer = document.getElementById("notesLayer");
+  var cleanupBtn = document.getElementById("cleanupBtn");
   var counterEl = document.getElementById("counter");
 
-  var ATTACH = { x: 219, y: 233 };
-  var IDLE = { ctrl: { x: 235, y: 275 }, tab: { x: 245, y: 320 } };
-  var PULLED = { ctrl: { x: 255, y: 325 }, tab: { x: 270, y: 400 } };
+  // ---------- geometry state ----------
+  var W = 0, H = 0;
+  var cx = 0, cy = 0;
+  var NOMINAL_R = 108;
+  var currentR = NOMINAL_R;
+  var ATTACH_ANGLE = 50 * Math.PI / 180;
+  var REDUCED_MOTION = window.matchMedia &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  var isAnimating = false;
-  var reasonBag = [];
-  var lastReason = null;
-
-  var STORAGE_KEY = "reasonsForMahak_pullCount";
-  var pullCount = parseInt(localStorage.getItem(STORAGE_KEY) || "0", 10);
-  updateCounter();
-
-  function updateCounter() {
-    if (!pullCount) {
-      counterEl.textContent = "";
-      return;
-    }
-    counterEl.textContent = pullCount === 1
-      ? "1 thread pulled so far"
-      : pullCount + " threads pulled so far";
+  function clamp(min, val, max) {
+    return Math.max(min, Math.min(max, val));
   }
 
-  function lerp(a, b, t) {
-    return a + (b - a) * t;
+  function computeGeometry() {
+    W = window.innerWidth;
+    H = window.innerHeight;
+    stageSvg.setAttribute("viewBox", "0 0 " + W + " " + H);
+    stageSvg.setAttribute("width", W);
+    stageSvg.setAttribute("height", H);
+    currentR = clamp(58, Math.min(W, H) * 0.15, 108);
+    cx = W / 2;
+    cy = H * 0.58;
+  }
+  computeGeometry();
+  window.addEventListener("resize", computeGeometry);
+
+  function ballScale() {
+    return currentR / NOMINAL_R;
   }
 
-  function easeOutCubic(t) {
-    return 1 - Math.pow(1 - t, 3);
+  function attachPoint() {
+    return {
+      x: cx + Math.cos(ATTACH_ANGLE) * currentR,
+      y: cy + Math.sin(ATTACH_ANGLE) * currentR
+    };
   }
 
+  function idleTabPos() {
+    var a = attachPoint();
+    var s = ballScale();
+    return { x: a.x + 26 * s, y: a.y + 87 * s };
+  }
+
+  // ---------- easing / lerp ----------
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
   function easeOutBack(t) {
-    var c1 = 1.70158;
-    var c3 = c1 + 1;
+    var c1 = 1.70158, c3 = c1 + 1;
     return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
   }
 
-  function setThreadPosition(ctrl, tab) {
-    threadPath.setAttribute(
-      "d",
-      "M" + ATTACH.x + "," + ATTACH.y +
-      " Q" + ctrl.x + "," + ctrl.y +
-      " " + tab.x + "," + tab.y
-    );
-    thumbKnot.setAttribute("cx", tab.x);
-    thumbKnot.setAttribute("cy", tab.y);
-    thumbKnotBack.setAttribute("cx", tab.x);
-    thumbKnotBack.setAttribute("cy", tab.y);
+  // ---------- squish (bounce feel on the ball) ----------
+  var squish = { x: 1, y: 1 };
+  function bumpSquish(sx, sy) {
+    squish.x = sx;
+    squish.y = sy;
   }
 
-  function animateThread(from, to, duration, easing, onDone) {
-    var start = null;
-    function step(ts) {
-      if (start === null) start = ts;
-      var t = Math.min(1, (ts - start) / duration);
-      var e = easing(t);
-      setThreadPosition(
-        { x: lerp(from.ctrl.x, to.ctrl.x, e), y: lerp(from.ctrl.y, to.ctrl.y, e) },
-        { x: lerp(from.tab.x, to.tab.x, e), y: lerp(from.tab.y, to.tab.y, e) }
-      );
-      if (t < 1) {
+  // ---------- thread rendering ----------
+  var lastRenderedTab = idleTabPos();
+
+  function renderThread(tabPos) {
+    lastRenderedTab = tabPos;
+    var a = attachPoint();
+    var dist = Math.hypot(tabPos.x - a.x, tabPos.y - a.y);
+    var sag = Math.min(dist * 0.22, 55);
+    var ctrl = {
+      x: (a.x + tabPos.x) / 2,
+      y: (a.y + tabPos.y) / 2 + sag
+    };
+    threadPath.setAttribute(
+      "d",
+      "M" + a.x + "," + a.y + " Q" + ctrl.x + "," + ctrl.y + " " + tabPos.x + "," + tabPos.y
+    );
+    thumbKnot.setAttribute("cx", tabPos.x);
+    thumbKnot.setAttribute("cy", tabPos.y);
+    thumbKnotBack.setAttribute("cx", tabPos.x);
+    thumbKnotBack.setAttribute("cy", tabPos.y);
+    tabHit.setAttribute("cx", tabPos.x);
+    tabHit.setAttribute("cy", tabPos.y);
+  }
+
+  // ---------- continuous render loop: idle sway + squish decay ----------
+  var swayPhase = Math.random() * 10;
+  var isDragging = false;
+  var isSpringingBack = false;
+
+  function tick(now) {
+    swayPhase += REDUCED_MOTION ? 0 : 0.014;
+    var swayDeg = Math.sin(swayPhase) * 1.3;
+
+    squish.x += (1 - squish.x) * 0.16;
+    squish.y += (1 - squish.y) * 0.16;
+
+    var s = ballScale();
+    ballArt.setAttribute(
+      "transform",
+      "translate(" + cx + " " + cy + ") rotate(" + swayDeg.toFixed(2) + ") " +
+      "scale(" + (s * squish.x).toFixed(4) + " " + (s * squish.y).toFixed(4) + ") " +
+      "translate(-150 -150)"
+    );
+
+    if (!isDragging && !isSpringingBack) {
+      var idle = idleTabPos();
+      idle.x += REDUCED_MOTION ? 0 : Math.sin(swayPhase * 0.8) * 2;
+      renderThread(idle);
+    }
+
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  // ---------- spring back to rest ----------
+  function springBackThread() {
+    isSpringingBack = true;
+    var start = { x: lastRenderedTab.x, y: lastRenderedTab.y };
+    var duration = 480;
+    var t0 = performance.now();
+    function step(now) {
+      var t = Math.min(1, (now - t0) / duration);
+      var e = easeOutBack(t);
+      var target = idleTabPos();
+      renderThread({ x: lerp(start.x, target.x, e), y: lerp(start.y, target.y, e) });
+      if (t < 1 && isSpringingBack) {
         requestAnimationFrame(step);
-      } else if (onDone) {
-        onDone();
+      } else {
+        isSpringingBack = false;
       }
     }
     requestAnimationFrame(step);
   }
+
+  // ---------- reasons bag (no immediate repeats) ----------
+  var reasonBag = [];
+  var lastReason = null;
 
   function nextReason() {
     if (!window.REASONS || window.REASONS.length === 0) {
@@ -85,14 +154,10 @@
     }
     if (reasonBag.length === 0) {
       reasonBag = window.REASONS.slice();
-      // shuffle
       for (var i = reasonBag.length - 1; i > 0; i--) {
         var j = Math.floor(Math.random() * (i + 1));
-        var tmp = reasonBag[i];
-        reasonBag[i] = reasonBag[j];
-        reasonBag[j] = tmp;
+        var tmp = reasonBag[i]; reasonBag[i] = reasonBag[j]; reasonBag[j] = tmp;
       }
-      // avoid immediate repeat across a reshuffle boundary
       if (reasonBag.length > 1 && reasonBag[0] === lastReason) {
         reasonBag.push(reasonBag.shift());
       }
@@ -102,43 +167,263 @@
     return reason;
   }
 
-  function showNote(text) {
-    noteText.textContent = text;
-    noteOverlay.classList.add("visible");
+  // ---------- counter ----------
+  var STORAGE_KEY = "reasonsForMahak_pullCount";
+  var pullCount = parseInt(localStorage.getItem(STORAGE_KEY) || "0", 10);
+  function updateCounter() {
+    if (!pullCount) { counterEl.textContent = ""; return; }
+    counterEl.textContent = pullCount === 1
+      ? "1 thread pulled so far"
+      : pullCount + " threads pulled so far";
   }
+  updateCounter();
 
-  function hideNote() {
-    noteOverlay.classList.remove("visible");
-  }
+  // ---------- quote cards ----------
+  var activeCards = [];
+  var topZ = 21;
 
-  function pull() {
-    if (isAnimating) return;
-    isAnimating = true;
-    hideNote();
+  function spawnNote(pos, scattered) {
+    var text = nextReason();
+    pullCount += 1;
+    localStorage.setItem(STORAGE_KEY, String(pullCount));
+    updateCounter();
 
-    ballGroup.classList.add("squish");
-    setTimeout(function () {
-      ballGroup.classList.remove("squish");
-    }, 200);
+    var card = document.createElement("div");
+    card.className = "quote-card spawning";
+    var rot = (Math.random() * 10 - 5).toFixed(1);
+    card.style.setProperty("--rot", rot + "deg");
 
-    animateThread(IDLE, PULLED, 260, easeOutCubic, function () {
-      pullCount += 1;
-      localStorage.setItem(STORAGE_KEY, String(pullCount));
-      updateCounter();
-      showNote(nextReason());
+    var jitterX = scattered ? (Math.random() * 60 - 30) : 0;
+    var jitterY = scattered ? 30 + Math.random() * 24 : 0;
+    var left = clamp(10, pos.x - 100 + jitterX, window.innerWidth - 210);
+    var top = clamp(70, pos.y - 30 + jitterY, window.innerHeight - 130);
+    card.style.left = left + "px";
+    card.style.top = top + "px";
+    card.style.zIndex = String(++topZ);
 
-      setTimeout(function () {
-        animateThread(PULLED, IDLE, 500, easeOutBack, function () {
-          isAnimating = false;
-        });
-      }, 250);
+    var closeBtn = document.createElement("button");
+    closeBtn.className = "quote-close";
+    closeBtn.setAttribute("aria-label", "Remove");
+    closeBtn.innerHTML = "&times;";
+
+    var textEl = document.createElement("p");
+    textEl.className = "quote-text";
+    textEl.textContent = text;
+
+    card.appendChild(closeBtn);
+    card.appendChild(textEl);
+    notesLayer.appendChild(card);
+    activeCards.push(card);
+
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        card.classList.remove("spawning");
+      });
     });
+
+    closeBtn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      removeCardImmediate(card);
+    });
+
+    makeCardDraggable(card);
   }
 
-  pullTarget.addEventListener("click", pull);
+  function removeCardImmediate(card) {
+    var idx = activeCards.indexOf(card);
+    if (idx !== -1) activeCards.splice(idx, 1);
+    card.classList.add("removing");
+    setTimeout(function () {
+      if (card.parentNode) card.parentNode.removeChild(card);
+    }, 300);
+  }
 
-  noteClose.addEventListener("click", hideNote);
-  noteOverlay.addEventListener("click", function (e) {
-    if (e.target === noteOverlay) hideNote();
+  function makeCardDraggable(card) {
+    var dragging = false, offsetX = 0, offsetY = 0;
+
+    card.addEventListener("pointerdown", function (e) {
+      if (e.target.closest(".quote-close")) return;
+      dragging = true;
+      card.setPointerCapture(e.pointerId);
+      var rect = card.getBoundingClientRect();
+      offsetX = e.clientX - rect.left;
+      offsetY = e.clientY - rect.top;
+      card.style.zIndex = String(++topZ);
+      card.classList.add("dragging");
+    });
+
+    card.addEventListener("pointermove", function (e) {
+      if (!dragging) return;
+      card.style.left = (e.clientX - offsetX) + "px";
+      card.style.top = (e.clientY - offsetY) + "px";
+    });
+
+    function stopDrag() {
+      dragging = false;
+      card.classList.remove("dragging");
+    }
+    card.addEventListener("pointerup", stopDrag);
+    card.addEventListener("pointercancel", stopDrag);
+  }
+
+  // ---------- quick tap fallback (reveals exactly 1) ----------
+  function quickPull() {
+    bumpSquish(0.95, 1.06);
+    var idle = idleTabPos();
+    var s = ballScale();
+    var pulled = { x: idle.x + 18 * s, y: idle.y + 55 * s };
+    var t0 = performance.now();
+    function out(now) {
+      var t = Math.min(1, (now - t0) / 220);
+      renderThread({
+        x: lerp(idle.x, pulled.x, easeOutCubic(t)),
+        y: lerp(idle.y, pulled.y, easeOutCubic(t))
+      });
+      if (t < 1) {
+        requestAnimationFrame(out);
+      } else {
+        spawnNote(pulled, false);
+        bumpSquish(1.03, 0.97);
+        setTimeout(springBackThread, 140);
+      }
+    }
+    requestAnimationFrame(out);
+  }
+
+  // ---------- drag-to-pull interaction ----------
+  var dragStartClient = { x: 0, y: 0 };
+  var dragStartTime = 0;
+  var lastPointerPos = { x: 0, y: 0 };
+  var dragSession = { revealed: 0, holdTimer: null };
+  var REVEAL_THRESHOLD = 70;
+  var HOLD_MS = 650;
+
+  function checkReveal(pos) {
+    var idle = idleTabPos();
+    var threshold = REVEAL_THRESHOLD * ballScale();
+    var dist = Math.hypot(pos.x - idle.x, pos.y - idle.y);
+
+    if (dist > threshold && dragSession.revealed === 0) {
+      dragSession.revealed = 1;
+      spawnNote(pos, false);
+      dragSession.holdTimer = setTimeout(function () {
+        if (!isDragging || dragSession.revealed !== 1) return;
+        var idle2 = idleTabPos();
+        var d2 = Math.hypot(lastPointerPos.x - idle2.x, lastPointerPos.y - idle2.y);
+        if (d2 > threshold) {
+          dragSession.revealed = 2;
+          spawnNote(lastPointerPos, true);
+        }
+      }, HOLD_MS);
+    }
+  }
+
+  tabHit.addEventListener("pointerdown", function (e) {
+    e.preventDefault();
+    isDragging = true;
+    isSpringingBack = false;
+    tabHit.setPointerCapture(e.pointerId);
+    bumpSquish(0.95, 1.05);
+    dragSession = { revealed: 0, holdTimer: null };
+    dragStartClient = { x: e.clientX, y: e.clientY };
+    dragStartTime = performance.now();
+    lastPointerPos = { x: e.clientX, y: e.clientY };
+    renderThread(lastPointerPos);
+  });
+
+  tabHit.addEventListener("pointermove", function (e) {
+    if (!isDragging) return;
+    lastPointerPos = { x: e.clientX, y: e.clientY };
+    renderThread(lastPointerPos);
+    checkReveal(lastPointerPos);
+  });
+
+  function endDrag(e) {
+    if (!isDragging) return;
+    isDragging = false;
+    if (dragSession.holdTimer) clearTimeout(dragSession.holdTimer);
+
+    var totalMove = Math.hypot(
+      lastPointerPos.x - dragStartClient.x,
+      lastPointerPos.y - dragStartClient.y
+    );
+    var heldMs = performance.now() - dragStartTime;
+
+    if (dragSession.revealed === 0 && totalMove < 14 && heldMs < 350) {
+      quickPull();
+      return;
+    }
+
+    bumpSquish(1.04, 0.95);
+    springBackThread();
+  }
+  tabHit.addEventListener("pointerup", endDrag);
+  tabHit.addEventListener("pointercancel", endDrag);
+
+  // ---------- cleanup: bounce the ball, clear cards one by one ----------
+  var isCleaning = false;
+
+  function removeCardsStaggered() {
+    var cards = activeCards.slice();
+    activeCards = [];
+    var i = 0;
+    function next() {
+      if (i >= cards.length) return;
+      removeCardImmediate(cards[i]);
+      i += 1;
+      setTimeout(next, 500);
+    }
+    next();
+  }
+
+  function bounceBallSequence() {
+    var homeCx = cx, homeCy = cy;
+    var margin = currentR + 30;
+    var topBound = Math.max(120, margin);
+    var bottomBound = Math.max(topBound + 40, H * 0.62);
+    var points = [];
+    for (var i = 0; i < 5; i++) {
+      points.push({
+        x: margin + Math.random() * Math.max(40, W - margin * 2),
+        y: topBound + Math.random() * Math.max(40, bottomBound - topBound)
+      });
+    }
+    points.push({ x: homeCx, y: homeCy });
+
+    var idx = 0;
+    function hop() {
+      if (idx >= points.length) { isCleaning = false; return; }
+      var from = { x: cx, y: cy };
+      var to = points[idx];
+      var isLast = idx === points.length - 1;
+      var duration = isLast ? 520 : 360;
+      bumpSquish(1.1, 0.88);
+      var t0 = performance.now();
+      function step(now) {
+        var t = Math.min(1, (now - t0) / duration);
+        var e = isLast ? easeOutBack(t) : easeOutCubic(t);
+        cx = lerp(from.x, to.x, e);
+        cy = lerp(from.y, to.y, e);
+        if (t < 1) {
+          requestAnimationFrame(step);
+        } else {
+          idx += 1;
+          hop();
+        }
+      }
+      requestAnimationFrame(step);
+    }
+    hop();
+  }
+
+  cleanupBtn.addEventListener("click", function () {
+    if (isCleaning) return;
+    isCleaning = true;
+    cleanupBtn.disabled = true;
+    bounceBallSequence();
+    removeCardsStaggered();
+    setTimeout(function () {
+      cleanupBtn.disabled = false;
+    }, 2600);
   });
 })();

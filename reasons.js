@@ -13,7 +13,7 @@
 // this feel like it's actually about her.
 // ============================================================
 
-const REASONS = [
+var REASONS = [
   "I love how your face lights up when you talk about philosophy.",
   "I'm proud of how disciplined you've become with your UPSC prep.",
   "I love the way you get so absorbed in your crochet projects.",
