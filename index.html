@@ -6,13 +6,13 @@
 <title>Reasons I love you</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;600;700&family=Quicksand:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Lora:ital,wght@0,500;0,600;1,500;1,600&family=Quicksand:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
   <header class="page-header">
-    <h1>reasons I love you</h1>
+    <h1>Reasons I love you, Miss Budhraja</h1>
     <p class="hint">drag the thread</p>
   </header>
 
@@ -31,6 +31,8 @@
         <circle cx="150" cy="150" r="108"/>
       </clipPath>
     </defs>
+
+    <circle id="ballHit" class="drag-handle" r="1" fill="#000" opacity="0" aria-label="Drag the ball to move it"/>
 
     <g id="ballArt">
       <ellipse cx="150" cy="266" rx="86" ry="14" fill="#8F4A5C" opacity="0.18"/>
@@ -75,7 +77,7 @@
     <path id="threadPath" fill="none" stroke="#B4677A" stroke-width="3.5" stroke-linecap="round"/>
     <circle id="thumbKnotBack" r="11" fill="#8F4A5C" opacity="0.5"/>
     <circle id="thumbKnot" r="9.5" fill="#B4677A"/>
-    <circle id="tabHit" r="27" fill="#000" opacity="0" aria-label="Drag the thread to reveal a reason"/>
+    <circle id="tabHit" class="drag-handle" r="27" fill="#000" opacity="0" aria-label="Drag the thread to reveal a reason"/>
   </svg>
 
   <!-- freely draggable quote cards live here -->
