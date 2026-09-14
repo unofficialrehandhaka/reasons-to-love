@@ -35,6 +35,7 @@
     stageSvg.setAttribute("width", W);
     stageSvg.setAttribute("height", H);
     currentR = clamp(58, Math.min(W, H) * 0.15, 108);
+    ballHit.setAttribute("r", currentR * 0.92);
     HOME.x = W / 2;
     HOME.y = H * 0.58;
     if (!hasPositioned) {
@@ -119,7 +120,6 @@
 
     ballHit.setAttribute("cx", cx);
     ballHit.setAttribute("cy", cy);
-    ballHit.setAttribute("r", currentR * 0.92);
 
     var s = ballScale();
     ballArt.setAttribute(
